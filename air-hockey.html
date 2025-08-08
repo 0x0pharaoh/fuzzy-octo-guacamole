@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neon Starship Air Hockey</title>
+  <style>
+    :root{
+      --bg:#020309;
+      --neon:#39ff14; /* neon green */
+      --muted:rgba(255,255,255,0.06);
+      font-family: Inter, system-ui, Arial;
+    }
+    html,body{height:100%;margin:0;background:radial-gradient(ellipse at top,#071018 0%, var(--bg) 60%);color:#e6ffe6}
+    .wrap{display:flex;align-items:center;justify-content:center;height:100%;padding:20px;box-sizing:border-box}
+    .card{width:980px;max-width:100%;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);border-radius:12px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,0.6);border:1px solid rgba(57,255,20,0.06)}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    h1{font-size:18px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center;margin-left:auto}
+    .btn{background:transparent;border:1px solid rgba(255,255,255,0.08);padding:6px 10px;border-radius:8px;color:#dfffdc;cursor:pointer}
+    canvas{display:block;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);border-radius:8px;box-shadow:0px 0px 40px 0px #39ff14 inset}
+    .hud{display:flex;gap:12px;align-items:center;margin-top:10px}
+    .score{font-size:20px;padding:6px 12px;border-radius:8px;background:rgba(0,0,0,0.25);border:1px solid rgba(57,255,20,0.06)}
+    label{font-size:13px;color:#bfffbf}
+    input[type=range]{-webkit-appearance:none;width:140px;background:transparent}
+    input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:6px;background:linear-gradient(90deg, rgba(57,255,20,0.15), rgba(57,255,20,0.05));}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;height:14px;width:14px;border-radius:50%;background:var(--neon);box-shadow:0 0 8px var(--neon);margin-top:-4px}
+    footer{font-size:12px;margin-top:8px;color:#9fffa0}
+    @media (max-width:600px){.hud{flex-direction:column;align-items:flex-start}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg width="46" height="36" viewBox="0 0 46 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g filter="">
+              <path d="M2 18 L22 4 L22 32 Z" fill="#000" stroke="#39ff14" stroke-width="1.4" stroke-linejoin="round"/>
+            </g>
+          </svg>
+          <h1>Neon Starship — Air Hockey (1P vs AI)</h1>
+        </div>
+        <div class="controls">
+          <button class="btn" id="restartBtn">Restart</button>
+          <button class="btn" id="pauseBtn">Pause</button>
+        </div>
+      </header>
+
+      <canvas id="game" width="920" height="480"></canvas>
+
+      <div class="hud">
+        <div class="score" id="score">Player 0 — 0 AI</div>
+        <label>AI Difficulty
+          <input id="difficulty" type="range" min="0" max="1" step="0.01" value="0.6">
+        </label>
+        <label>Max Score
+          <input id="maxScore" type="number" min="1" max="20" value="7" style="width:64px;margin-left:6px;background:transparent;color:#dfffdc;border-radius:6px;border:1px solid rgba(255,255,255,0.04);padding:4px">
+        </label>
+        <div style="margin-left:auto;color:#bfffbf">Controls: Mouse / Touch to move ship, Click to serve</div>
+      </div>
+      <footer>Tip: Try higher AI difficulty for a real challenge. Press space to pause.</footer>
+    </div>
+  </div>
+
+<script>
+// Neon Starship Air Hockey - single-file
+// Controls: move with mouse/touch. Click to serve. Space to pause.
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = canvas.width, H = canvas.height;
+
+// Game state
+let playerScore = 0, aiScore = 0;
+const scoreEl = document.getElementById('score');
+const restartBtn = document.getElementById('restartBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const difficultyInput = document.getElementById('difficulty');
+const maxScoreInput = document.getElementById('maxScore');
+
+let paused = false;
+let serving = true; // waiting for serve
+
+// Entities
+const puck = {x: W/2, y: H/2, r: 10, vx:0, vy:0, speed:0}
+const player = {x: 90, y: H/2, r: 24, vx:0, vy:0, maxSpeed:12}
+const ai = {x: W-90, y: H/2, r: 24, vx:0, vy:0, maxSpeed:10}
+
+function resetPuck(toRight=true){
+  puck.x = W/2; puck.y = H/2; puck.vx = (toRight?1:-1) * (3 + Math.random()*2);
+  puck.vy = (Math.random()*2-1) * 2.5;
+  puck.speed = Math.hypot(puck.vx,puck.vy);
+}
+
+function init(){
+  resetPuck(true);
+  player.y = H/2; ai.y = H/2;
+  playerScore = 0; aiScore = 0;
+  updateScore();
+}
+
+// Input
+let mouseY = H/2; let isTouch=false;
+canvas.addEventListener('mousemove', (e)=>{const r=canvas.getBoundingClientRect(); mouseY = (e.clientY - r.top) * (canvas.height/r.height);});
+canvas.addEventListener('touchmove', (e)=>{isTouch=true; e.preventDefault(); const r=canvas.getBoundingClientRect(); mouseY = (e.touches[0].clientY - r.top) * (canvas.height/r.height);}, {passive:false});
+canvas.addEventListener('mousedown', ()=>{ if(serving){serve();} });
+canvas.addEventListener('touchstart', ()=>{ if(serving){serve();} });
+window.addEventListener('resize', ()=>{/* keep canvas size fixed for predictable layout */});
+window.addEventListener('keydown', (e)=>{ if(e.code==='Space'){ paused = !paused; pauseBtn.textContent = paused? 'Resume':'Pause'; } });
+
+restartBtn.onclick = ()=>{ init(); }
+pauseBtn.onclick = ()=>{ paused = !paused; pauseBtn.textContent = paused? 'Resume':'Pause'; }
+
+function serve(){ serving = false; resetPuck(Math.random()>0.5); }
+
+// Collision helpers
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function collideCircle(a,b){ const dx=a.x-b.x, dy=a.y-b.y; const dist=Math.hypot(dx,dy); return dist < a.r + b.r; }
+
+// AI: simple lerp towards puck with reaction and max speed
+function updateAI(){
+  const diff = puck.y - ai.y;
+  const difficulty = parseFloat(difficultyInput.value); // 0..1
+  const react = 0.06 + difficulty*0.28; // reaction lerp
+  const targetY = ai.y + diff * react;
+  const maxStep = ai.maxSpeed * (0.9 + difficulty*0.6);
+  const step = clamp(targetY - ai.y, -maxStep, maxStep);
+  ai.y += step;
+  // keep inside
+  ai.y = clamp(ai.y, ai.r, H - ai.r);
+}
+
+// Physics
+function updatePhysics(){
+  // player follows mouse/touch
+  const py = clamp(mouseY, player.r, H - player.r);
+  // smooth movement
+  player.y += (py - player.y) * 0.22;
+
+  // AI
+  updateAI();
+
+  // puck motion
+  puck.x += puck.vx; puck.y += puck.vy;
+
+  // wall collisions (top/bottom)
+  if(puck.y - puck.r < 0){ puck.y = puck.r; puck.vy *= -1; }
+  if(puck.y + puck.r > H){ puck.y = H - puck.r; puck.vy *= -1; }
+
+  // paddles collisions
+  // player
+  const toPlayer = {x: player.x, y: player.y, r: player.r};
+  if(collideCircle(puck, toPlayer)){
+    // reflect
+    const nx = (puck.x - player.x); const ny = (puck.y - player.y);
+    const dist = Math.hypot(nx,ny) || 1;
+    const unx = nx/dist, uny = ny/dist;
+    const relSpeed = puck.vx*unx + puck.vy*uny;
+    puck.vx = puck.vx - 2*relSpeed*unx; puck.vy = puck.vy - 2*relSpeed*uny;
+    // add boost based on where hit
+    puck.vx += 1.2; puck.vy += ( (puck.y - player.y) * 0.12 );
+    // clamp speed
+    const s = Math.hypot(puck.vx,puck.vy);
+    const maxS = 12;
+    if(s>maxS){ puck.vx *= maxS/s; puck.vy *= maxS/s; }
+    // nudge out
+    const overlap = player.r + puck.r - dist;
+    puck.x += unx * overlap; puck.y += uny * overlap;
+    playBeep(300,0.04);
+  }
+  // ai
+  const toAI = {x: ai.x, y: ai.y, r: ai.r};
+  if(collideCircle(puck, toAI)){
+    const nx = (puck.x - ai.x); const ny = (puck.y - ai.y);
+    const dist = Math.hypot(nx,ny) || 1;
+    const unx = nx/dist, uny = ny/dist;
+    const relSpeed = puck.vx*unx + puck.vy*uny;
+    puck.vx = puck.vx - 2*relSpeed*unx; puck.vy = puck.vy - 2*relSpeed*uny;
+    puck.vx -= 1.2; puck.vy += ( (puck.y - ai.y) * 0.12 );
+    const s = Math.hypot(puck.vx,puck.vy);
+    const maxS = 13;
+    if(s>maxS){ puck.vx *= maxS/s; puck.vy *= maxS/s; }
+    const overlap = ai.r + puck.r - dist;
+    puck.x += unx * overlap; puck.y += uny * overlap;
+    playBeep(400,0.05);
+  }
+
+  // goals
+  if(puck.x - puck.r < 0){ // AI scores
+    aiScore++; updateScore(); resetRound(false);
+  }
+  if(puck.x + puck.r > W){ // player scores
+    playerScore++; updateScore(); resetRound(true);
+  }
+}
+
+function resetRound(playerServes=true){
+  serving = true;
+  puck.x = W/2; puck.y = H/2; puck.vx = 0; puck.vy = 0;
+  // short timeout then serve
+  setTimeout(()=>{ if(!isGameOver()) serve(); }, 700);
+}
+
+function updateScore(){ scoreEl.textContent = `Player ${playerScore} — ${aiScore} AI`; }
+function isGameOver(){ const maxS = parseInt(maxScoreInput.value)||7; return playerScore>=maxS || aiScore>=maxS; }
+
+// Rendering — neon style
+function drawShip(x,y,angle,scale=1){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(angle); ctx.scale(scale,scale);
+  // glow
+  ctx.shadowColor = 'rgba(57,255,20,0.9)'; ctx.shadowBlur = 18;
+  // main body triangle
+  ctx.beginPath(); ctx.moveTo(-18, -12); ctx.lineTo(14, 0); ctx.lineTo(-18, 12); ctx.closePath();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(57,255,20,0.95)'; ctx.stroke();
+  // cockpit
+  ctx.beginPath(); ctx.ellipse(-6,0,6,5,0,0,Math.PI*2); ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill(); ctx.stroke();
+  // thruster
+  ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(22,6); ctx.lineTo(22,-6); ctx.closePath(); ctx.fillStyle='rgba(57,255,20,0.08)'; ctx.fill();
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+function drawPuck(){
+  // neon ring
+  ctx.save(); ctx.beginPath(); ctx.arc(puck.x,puck.y,puck.r+6,0,Math.PI*2); ctx.fillStyle='rgba(57,255,20,0.02)'; ctx.fill(); ctx.restore();
+  ctx.save(); ctx.shadowColor='rgba(57,255,20,0.95)'; ctx.shadowBlur=18; ctx.beginPath(); ctx.arc(puck.x,puck.y,puck.r,0,Math.PI*2); ctx.fillStyle='#0b1b0a'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='rgba(57,255,20,0.9)'; ctx.stroke(); ctx.restore();
+}
+
+function drawCourt(){
+  // background grid
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.01)'; ctx.fillRect(0,0,W,H);
+  // center line
+  ctx.beginPath(); ctx.setLineDash([10,10]); ctx.moveTo(W/2,10); ctx.lineTo(W/2,H-10); ctx.strokeStyle='rgba(57,255,20,0.06)'; ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]);
+  // center circle
+  ctx.beginPath(); ctx.arc(W/2,H/2,70,0,Math.PI*2); ctx.strokeStyle='rgba(57,255,20,0.035)'; ctx.lineWidth=2; ctx.stroke();
+  ctx.restore();
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawCourt();
+  // draw paddles as starships
+  drawShip(player.x, player.y, 0.06); drawShip(ai.x, ai.y, Math.PI);
+  drawPuck();
+  // score overlay neon
+  ctx.save(); ctx.font='16px monospace'; ctx.fillStyle='rgba(57,255,20,0.06)'; ctx.fillText('NEON', 14, 22); ctx.restore();
+}
+
+// Simple sound
+let audioCtx=null;
+function getAudioCtx(){ if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+function playBeep(freq=300,duration=0.05){ try{ const ac=getAudioCtx(); const o=ac.createOscillator(); const g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=freq; g.gain.value=0.0001; const now=ac.currentTime; g.gain.linearRampToValueAtTime(0.06, now+0.001); o.start(now); g.gain.exponentialRampToValueAtTime(0.0001, now+duration); o.stop(now+duration+0.02);}catch(e){} }
+
+// Main loop
+let last=0;
+function loop(ts){ if(paused){ last=ts; requestAnimationFrame(loop); return; }
+  const dt=(ts-last)/16.666||1; last=ts;
+  if(!serving && !isGameOver()) updatePhysics();
+  draw();
+  if(isGameOver()){
+    ctx.save(); ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(W/2-240,H/2-60,480,120);
+    ctx.fillStyle='white'; ctx.font='28px Inter, monospace'; ctx.textAlign='center';
+    const winner = playerScore>aiScore? 'Player Wins!':'AI Wins!';
+    ctx.fillText(winner, W/2, H/2-6);
+    ctx.font='14px Inter, monospace'; ctx.fillText('Press Restart to play again', W/2, H/2+22);
+    ctx.restore();
+  }
+  requestAnimationFrame(loop);
+}
+
+init(); requestAnimationFrame(loop);
+
+// Optional: handle canvas high DPI for crisper neon
+(function scaleCanvas(){ const dpr = window.devicePixelRatio || 1; const cssW = canvas.clientWidth || canvas.width; const cssH = canvas.clientHeight || canvas.height; canvas.width = cssW * dpr; canvas.height = cssH * dpr; canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px'; ctx.scale(dpr,dpr); W = cssW; H = cssH; })();
+
+</script>
+</body>
+</html>
