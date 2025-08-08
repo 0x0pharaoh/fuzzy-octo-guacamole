@@ -18,7 +18,7 @@
     h1{font-size:18px;margin:0}
     .controls{display:flex;gap:8px;align-items:center;margin-left:auto}
     .btn{background:transparent;border:1px solid rgba(255,255,255,0.08);padding:6px 10px;border-radius:8px;color:#dfffdc;cursor:pointer}
-    canvas{display:block;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);border-radius:8px;box-shadow:0px 0px 40px 0px #39ff14 inset}
+    canvas{display:block;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);border-radius:8px;box-shadow:0px 0px 40px 0px #39ff14 inset;width:100%;height:auto}
     .hud{display:flex;gap:12px;align-items:center;margin-top:10px}
     .score{font-size:20px;padding:6px 12px;border-radius:8px;background:rgba(0,0,0,0.25);border:1px solid rgba(57,255,20,0.06)}
     label{font-size:13px;color:#bfffbf}
@@ -47,7 +47,7 @@
         </div>
       </header>
 
-      <canvas id="game" width="100%" height="auto"></canvas>
+      <canvas id="game"></canvas>
 
       <div class="hud">
         <div class="score" id="score">Player 0 — 0 AI</div>
@@ -279,5 +279,6 @@ init(); requestAnimationFrame(loop);
 </script>
 </body>
 </html>
+
 
 
